@@ -130,6 +130,14 @@ func (c *Client) CreateSessionWithWindowName(name, dir, windowName string) error
 	return exec.Command("tmux", args...).Run()
 }
 
+func (c *Client) CreateWindow(sessionName, windowName string) error {
+	args := []string{"new-window", "-t", sessionName}
+	if windowName != "" {
+		args = append(args, "-n", windowName)
+	}
+	return exec.Command("tmux", args...).Run()
+}
+
 func (c *Client) KillSession(name string) error {
 	return exec.Command("tmux", "kill-session", "-t", name).Run()
 }
