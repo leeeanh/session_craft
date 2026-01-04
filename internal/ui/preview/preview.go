@@ -12,8 +12,22 @@ import (
 	"github.com/user/sessioncraft/internal/ui/components"
 )
 
+const (
+	cardBorderV    = 2 // top + bottom border
+	cardPaddingH   = 2 // left + right padding
+	cardTitleLines = 1 // title line (for preview card)
+	cardGap        = 1 // gap between cards
+
+	headerContentLines = 1 // header content
+	footerContentLines = 1 // footer content
+)
+
 // Metadata contains additional info for the preview pane
 type Metadata struct {
+	SessionName string
+	WindowName  string
+	WindowIndex int
+	IsActive    bool // Session is attached
 	Path        string
 	Uptime      string
 	ClientCount int
@@ -37,22 +51,16 @@ func NewModel(theme config.ThemeConfig) Model {
 
 func (m Model) View() string {
 	if !m.Active {
-		// Render placeholders to keep panel height consistent on first load.
-		if m.ResourceUsage.CPU == "" {
-			m.ResourceUsage.CPU = "-"
-		}
-		if m.ResourceUsage.Memory == "" {
-			m.ResourceUsage.Memory = "-"
-		}
-		if m.Metadata.Path == "" {
-			m.Metadata.Path = "~"
-		}
-		if m.Metadata.Uptime == "" {
-			m.Metadata.Uptime = "—"
-		}
+		return ""
 	}
 
-	// Calculate dimensions
+	if m.Width < 20 {
+		m.Width = 20
+	}
+	if m.Height < 15 {
+		m.Height = 15
+	}
+
 	contentWidth := m.Width - 4
 	if contentWidth < 10 {
 		contentWidth = 10
@@ -60,103 +68,92 @@ func (m Model) View() string {
 
 	// Theme colors
 	border := lipgloss.Color(m.Theme.Border)
-	dimmed := lipgloss.Color(m.Theme.Dimmed)
 	accent := lipgloss.Color(m.Theme.Accent)
-	surface := lipgloss.Color(m.Theme.Surface)
 
-	// Metrics card
-	metricsCard := m.renderMetricsCard(contentWidth, border, dimmed, accent, surface)
-	metricsHeight := lipgloss.Height(metricsCard)
+	// Fixed heights
+	headerCardHeight := cardBorderV + headerContentLines
+	footerCardHeight := cardBorderV + footerContentLines
 
-	// Info card (will be at bottom)
-	infoCard := m.renderInfoCard(contentWidth, border, dimmed, accent)
-	infoHeight := lipgloss.Height(infoCard)
-
-	// Calculate available height for preview card
-	// Account for metrics, info, and spacing between cards (2 lines)
-	baseAvailable := m.Height - metricsHeight - infoHeight - 2
-	previewHeight := baseAvailable
-	if previewHeight < 3 {
-		previewHeight = 3
-	}
-	previewCard := m.renderPreviewCard(contentWidth, previewHeight, border, dimmed)
-
-	// Build content with info card aligned to bottom
-	var content strings.Builder
-	content.WriteString(metricsCard)
-	content.WriteString("\n")
-	content.WriteString(previewCard)
-
-	// Calculate filler lines between preview and info to reach target height
-	filler := m.Height - (metricsHeight + 1 + lipgloss.Height(previewCard) + 1 + infoHeight)
-	if filler < 0 {
-		filler = 0
-	}
-	for i := 0; i < filler; i++ {
-		content.WriteString("\n")
+	// Preview takes remaining space
+	fixedHeight := headerCardHeight + cardGap + cardGap + footerCardHeight
+	previewCardHeight := m.Height - fixedHeight
+	if previewCardHeight < 5 {
+		previewCardHeight = 5
 	}
 
-	content.WriteString("\n")
-	content.WriteString(infoCard)
+	// Render cards
+	headerCard := m.renderHeaderCard(contentWidth, accent)
+	previewCard := m.renderPreviewCard(contentWidth, previewCardHeight, m.Metadata.IsActive)
+	footerCard := m.renderFooterCard(contentWidth, border)
 
-	// Wrap in a container
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		headerCard,
+		previewCard,
+		footerCard,
+	)
+
 	containerStyle := lipgloss.NewStyle().
 		Width(m.Width).
 		Height(m.Height).
 		PaddingLeft(2)
 
-	return containerStyle.Render(content.String())
+	return containerStyle.Render(content)
 }
 
-func (m Model) InfoCardHeight(width int) int {
-	if width < 1 {
-		width = 1
+func (m Model) renderHeaderCard(width int, accent lipgloss.TerminalColor) string {
+	icon := "󰆍"
+	if m.Metadata.SessionName == "" {
+		icon = ""
 	}
-	border := lipgloss.Color(m.Theme.Border)
-	dimmed := lipgloss.Color(m.Theme.Dimmed)
-	accent := lipgloss.Color(m.Theme.Accent)
-	infoCard := m.renderInfoCard(width, border, dimmed, accent)
-	return lipgloss.Height(infoCard)
-}
 
-func (m Model) renderMetricsCard(width int, border, dimmed, accent, surface lipgloss.TerminalColor) string {
-	// Parse CPU percentage (returns "3.2%" -> 0.032)
-	cpuPct := parsePercent(m.ResourceUsage.CPU)
+	identifier := m.Metadata.SessionName
+	if m.Metadata.WindowName != "" {
+		identifier = fmt.Sprintf("%s:%d %s", m.Metadata.SessionName, m.Metadata.WindowIndex, m.Metadata.WindowName)
+	}
+	if identifier == "" {
+		identifier = "No session selected"
+	}
 
-	// Create CPU progress bar
-	barWidth := 10
-	cpuBar := components.NewProgressBar(barWidth, accent, surface)
+	var statusBadge string
+	activeBg := lipgloss.Color(m.Theme.Active)
+	surfaceBg := lipgloss.Color(m.Theme.Surface)
+	bgColor := lipgloss.Color(m.Theme.Background)
 
-	labelStyle := lipgloss.NewStyle().Foreground(dimmed)
+	if m.Metadata.IsActive {
+		statusBadge = lipgloss.NewStyle().
+			Background(activeBg).
+			Foreground(bgColor).
+			Padding(0, 1).
+			Bold(true).
+			Render("active")
+	} else {
+		statusBadge = lipgloss.NewStyle().
+			Background(surfaceBg).
+			Foreground(lipgloss.Color(m.Theme.TextMuted)).
+			Padding(0, 1).
+			Render("idle")
+	}
 
-	// CPU as percentage with progress bar
-	cpuStr := fmt.Sprintf("CPU %s %s", cpuBar.Render(cpuPct), m.ResourceUsage.CPU)
+	iconStyle := lipgloss.NewStyle().Foreground(accent).Bold(true)
+	nameStyle := lipgloss.NewStyle().Foreground(accent).Bold(true)
 
-	// Memory as raw value (KB -> MB conversion for display)
-	memStr := fmt.Sprintf("MEM %s", formatMemory(m.ResourceUsage.Memory))
-
-	// Stats
-	clientStr := fmt.Sprintf("󰍹 %d", m.Metadata.ClientCount)
-	windowStr := fmt.Sprintf("󱂬 %d", m.Metadata.WindowCount)
-
-	metrics := fmt.Sprintf("%s  │  %s  │  %s  │  %s",
-		labelStyle.Render(cpuStr),
-		labelStyle.Render(memStr),
-		labelStyle.Render(clientStr),
-		labelStyle.Render(windowStr),
+	headerContent := fmt.Sprintf("%s %s  %s",
+		iconStyle.Render(icon),
+		nameStyle.Render(identifier),
+		statusBadge,
 	)
 
 	cardStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(border).
+		BorderForeground(accent).
 		Width(width).
 		Padding(0, 1)
 
-	titleStyle := lipgloss.NewStyle().Foreground(accent).Bold(true)
-	return cardStyle.Render(titleStyle.Render("─ Metrics ─") + "\n" + metrics)
+	return cardStyle.Render(headerContent)
 }
 
-func (m Model) renderPreviewCard(width, height int, border, dimmed lipgloss.TerminalColor) string {
+func (m Model) renderPreviewCard(width, height int, isActive bool) string {
 	// Process content
 	content := strings.TrimRight(m.Content, "\n\r")
 	lines := strings.Split(content, "\n")
@@ -165,8 +162,8 @@ func (m Model) renderPreviewCard(width, height int, border, dimmed lipgloss.Term
 		lines = []string{"No preview available"}
 	}
 
-	// Take last N lines (tail) so recent output is visible.
-	maxLines := height - 3
+	// Use constants for maxLines calculation
+	maxLines := height - cardBorderV - cardTitleLines
 	if maxLines < 1 {
 		maxLines = 1
 	}
@@ -217,80 +214,71 @@ func (m Model) renderPreviewCard(width, height int, border, dimmed lipgloss.Term
 	for _, line := range lines {
 		renderedLines = append(renderedLines, contentStyle.Render(line))
 	}
-	content = strings.Join(renderedLines, "\n")
+	contentStr := strings.Join(renderedLines, "\n")
+
+	// Dynamic border color
+	var borderColor lipgloss.TerminalColor
+	if isActive {
+		borderColor = lipgloss.Color(m.Theme.Active)
+	} else {
+		borderColor = lipgloss.Color(m.Theme.Border)
+	}
 
 	cardStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(border).
+		BorderForeground(borderColor).
 		Width(width).
 		Height(height).
 		Padding(0, 1)
 
 	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Accent)).Bold(true)
-	return cardStyle.Render(titleStyle.Render("─ Preview ─") + "\n" + content)
+	return cardStyle.Render(titleStyle.Render("─ Preview ─") + "\n" + contentStr)
 }
 
-func (m Model) renderInfoCard(width int, border, dimmed, accent lipgloss.TerminalColor) string {
+func (m Model) renderFooterCard(width int, border lipgloss.TerminalColor) string {
+	dimmed := lipgloss.Color(m.Theme.Dimmed)
+	accent := lipgloss.Color(m.Theme.Accent)
+	surface := lipgloss.Color(m.Theme.Surface)
+
+	labelStyle := lipgloss.NewStyle().Foreground(dimmed)
 	iconStyle := lipgloss.NewStyle().Foreground(accent)
-	textColor := m.Theme.TextMuted
-	if textColor == "" {
-		textColor = m.Theme.Foreground
-	}
-	if textColor == "" {
-		textColor = m.Theme.Dimmed
-	}
-	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(textColor))
+	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.TextMuted))
 
-	// Calculate available width for content (subtract padding and border)
-	contentWidth := width - 4
-	if contentWidth < 10 {
-		contentWidth = 10
+	// Path
+	path := m.Metadata.Path
+	if path == "" {
+		path = "~"
 	}
+	maxPathWidth := width/3 - 5
+	if maxPathWidth < 10 {
+		maxPathWidth = 10
+	}
+	path = truncatePath(path, maxPathWidth)
+	pathStr := fmt.Sprintf("%s %s", iconStyle.Render("󰉋"), textStyle.Render(path))
 
-	// Get uptime
+	// Uptime
 	uptime := m.Metadata.Uptime
 	if uptime == "" {
 		uptime = "—"
 	}
 	uptimeStr := fmt.Sprintf("%s %s", iconStyle.Render("󱎫"), textStyle.Render(uptime))
 
-	// Tags as badges
-	var tags []string
-	for _, tag := range m.Metadata.Tags {
-		badge := lipgloss.NewStyle().
-			Background(lipgloss.Color(m.Theme.Surface)).
-			Foreground(lipgloss.Color(m.Theme.Foreground)).
-			Padding(0, 1).
-			Render(tag)
-		tags = append(tags, badge)
-	}
-	tagStr := strings.Join(tags, " ")
-	if tagStr == "" {
-		tagStr = textStyle.Render("—")
-	}
+	// CPU
+	cpuPct := parsePercent(m.ResourceUsage.CPU)
+	barWidth := 6
+	cpuBar := components.NewProgressBar(barWidth, accent, surface)
+	cpuStr := fmt.Sprintf("%s %s", labelStyle.Render("CPU"), cpuBar.Render(cpuPct))
 
-	// Calculate fixed-width elements (separators + uptime + tags)
-	// "  │  " is 5 characters each, uptime icon + space is ~3, tag section varies
-	uptimeWidth := runewidth.StringWidth(uptimeStr)
-	tagWidth := runewidth.StringWidth(tagStr)
-	separatorWidth := 10 // "  │  " twice
-	fixedWidth := uptimeWidth + tagWidth + separatorWidth
+	// Memory
+	memStr := fmt.Sprintf("%s %s", labelStyle.Render("MEM"), textStyle.Render(formatMemory(m.ResourceUsage.Memory)))
 
-	// Calculate available width for path
-	pathMaxWidth := contentWidth - fixedWidth
-	if pathMaxWidth < 10 {
-		pathMaxWidth = 10
+	separator := labelStyle.Render(" │ ")
+	footerContent := pathStr + separator + uptimeStr + separator + cpuStr + separator + memStr
+
+	usable := width - 4
+	if ansi.StringWidth(footerContent) > usable {
+		footerContent = ansi.Truncate(footerContent, usable, "…")
 	}
-
-	// Get and truncate path
-	path := m.Metadata.Path
-	if path == "" {
-		path = "~"
-	}
-	path = truncatePath(path, pathMaxWidth)
-	pathStr := fmt.Sprintf("%s %s", iconStyle.Render("󰉋"), textStyle.Render(path))
-
-	info := fmt.Sprintf("%s  │  %s  │  %s", pathStr, uptimeStr, tagStr)
 
 	cardStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -298,8 +286,7 @@ func (m Model) renderInfoCard(width int, border, dimmed, accent lipgloss.Termina
 		Width(width).
 		Padding(0, 1)
 
-	titleStyle := lipgloss.NewStyle().Foreground(accent).Bold(true)
-	return cardStyle.Render(titleStyle.Render("─ Info ─") + "\n" + info)
+	return cardStyle.Render(footerContent)
 }
 
 // truncatePath intelligently truncates a path to fit within maxWidth

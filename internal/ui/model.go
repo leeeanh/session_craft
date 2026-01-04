@@ -573,20 +573,24 @@ func (m Model) updatePreview() tea.Cmd {
 	}
 
 	var sessionName string
+	var windowName string
 	var windowIndex int
 	var panePID int
 	var windowCount int
+	var isAttached bool
 	var session *tmux.Session
 
 	if node.Type == sidebar.SessionNode {
 		sessionName = node.Session.Name
 		windowCount = len(node.Session.Windows)
+		isAttached = node.Session.Attached
 		session = node.Session
 		// Find active window or default to 0
 		found := false
 		for _, w := range node.Session.Windows {
 			if w.Active {
 				windowIndex = w.Index
+				windowName = w.Name
 				panePID = w.ActivePanePID
 				found = true
 				break
@@ -594,17 +598,21 @@ func (m Model) updatePreview() tea.Cmd {
 		}
 		if !found && len(node.Session.Windows) > 0 {
 			windowIndex = node.Session.Windows[0].Index
+			windowName = node.Session.Windows[0].Name
 			panePID = node.Session.Windows[0].ActivePanePID
 		}
 	} else if node.Type == sidebar.WindowNode {
 		sessionName = node.Window.SessionName
+		windowName = node.Window.Name
 		windowIndex = node.Window.Index
 		panePID = node.Window.ActivePanePID
 		session = m.sessionByName(sessionName)
 		if session != nil {
 			windowCount = len(session.Windows)
+			isAttached = session.Attached
 		} else {
 			windowCount = 1
+			isAttached = false
 		}
 	} else {
 		ghostPath := node.Ghost.Path
@@ -616,6 +624,10 @@ func (m Model) updatePreview() tea.Cmd {
 				content: "[No preview available]",
 				usage:   tmux.ResourceUsage{CPU: "-", Memory: "-"},
 				metadata: preview.Metadata{
+					SessionName: "",
+					WindowName:  "",
+					WindowIndex: 0,
+					IsActive:    false,
 					Path:        ghostPath,
 					Uptime:      "—",
 					ClientCount: 0,
@@ -656,6 +668,10 @@ func (m Model) updatePreview() tea.Cmd {
 			content: content,
 			usage:   usage,
 			metadata: preview.Metadata{
+				SessionName: sessionName,
+				WindowName:  windowName,
+				WindowIndex: windowIndex,
+				IsActive:    isAttached,
 				Path:        sessionPath,
 				Uptime:      uptime,
 				ClientCount: clientCount,
@@ -744,11 +760,8 @@ func (m Model) View() string {
 	if previewWidth < 1 {
 		previewWidth = 1
 	}
-	previewContentWidth := previewWidth - 4
-	if previewContentWidth < 1 {
-		previewContentWidth = 1
-	}
-	footerHeight := m.preview.InfoCardHeight(previewContentWidth)
+	// Footer height is fixed in the new preview layout (border + content = 3 lines)
+	footerHeight := 3
 
 	// Layout: Sidebar (Left) | Preview (Right)
 	sidebarContent := m.renderSidebar(sidebarWidth, contentHeight, footerHeight)
