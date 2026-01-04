@@ -32,6 +32,7 @@ type InputPurpose int
 const (
 	InputNone InputPurpose = iota
 	InputNewSession
+	InputNewWindow
 	InputRenameSession
 	InputRenameWindow
 	InputFork
@@ -176,7 +177,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 
-				if val != "" {
+				if m.inputPurpose == InputNewWindow {
+					node := m.currentNode()
+					if node != nil && node.Type == sidebar.WindowNode {
+						err := m.client.CreateWindow(node.Window.SessionName, val)
+						if err != nil {
+							m.statusMessage = fmt.Sprintf("Create window failed: %v", err)
+						} else {
+							cmd = m.loadSessions
+							if val == "" {
+								m.statusMessage = "Created window"
+							} else {
+								m.statusMessage = "Created window " + val
+							}
+						}
+					} else {
+						m.statusMessage = "Select a window to create a sibling"
+					}
+				} else if val != "" {
 					switch m.inputPurpose {
 					case InputNewSession:
 						m.client.CreateSession(val, "") // Default dir
@@ -352,6 +370,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 			case "n":
+				node := m.currentNode()
+				if node != nil && node.Type == sidebar.WindowNode {
+					m.mode = ModeInput
+					m.inputPurpose = InputNewWindow
+					m.input.Prompt = "New Window Name: "
+					m.input.SetValue("")
+					m.input.Focus()
+					return m, textinput.Blink
+				}
+
 				m.mode = ModeInput
 				m.inputPurpose = InputNewSession
 				m.input.Prompt = "New Session Name: "
@@ -450,15 +478,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		sidebarWidth := int(float64(m.width) * 0.3)
-		// Account for outer border (2), sidebar border (2), and padding
-		m.preview.Width = m.width - sidebarWidth - 6
+		contentWidth := m.width - 2
+		if contentWidth < 1 {
+			contentWidth = 1
+		}
+		contentHeight := m.height - 2
+		if contentHeight < 1 {
+			contentHeight = 1
+		}
+
+		sidebarWidth := int(float64(contentWidth) * 0.3)
+
+		m.preview.Width = contentWidth - sidebarWidth - 1
 		if m.preview.Width < 0 {
 			m.preview.Width = 0
 		}
 
-		// Account for outer border height
-		m.preview.Height = m.height - 4
+		m.preview.Height = contentHeight
 		if m.preview.Height < 3 {
 			m.preview.Height = 3
 		}
@@ -694,9 +730,36 @@ func (m Model) View() string {
 		return emptyStyle.Render("No sessions found.\nPress n to create one, q to quit.")
 	}
 
+	contentWidth := m.width - 2
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	contentHeight := m.height - 2
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+
+	sidebarWidth := int(float64(contentWidth) * 0.3)
+	previewWidth := contentWidth - sidebarWidth - 1
+	if previewWidth < 1 {
+		previewWidth = 1
+	}
+	previewContentWidth := previewWidth - 4
+	if previewContentWidth < 1 {
+		previewContentWidth = 1
+	}
+	footerHeight := m.preview.InfoCardHeight(previewContentWidth)
+
 	// Layout: Sidebar (Left) | Preview (Right)
-	sidebarContent := m.renderSidebar()
-	previewContent := m.preview.View()
+	sidebarContent := m.renderSidebar(sidebarWidth, contentHeight, footerHeight)
+
+	previewModel := m.preview
+	previewModel.Width = previewWidth
+	if previewModel.Width < 1 {
+		previewModel.Width = 1
+	}
+	previewModel.Height = contentHeight
+	previewContent := previewModel.View()
 
 	// Join horizontally with top alignment for consistent borders
 	inner := lipgloss.JoinHorizontal(lipgloss.Top, sidebarContent, previewContent)
@@ -706,14 +769,13 @@ func (m Model) View() string {
 	frameStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(m.config.Theme.Border)).
-		Width(m.width - 2).
-		Align(lipgloss.Center)
+		Width(contentWidth).
+		Height(contentHeight)
 
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, frameStyle.Render(inner))
+	return frameStyle.Render(inner)
 }
 
-func (m Model) renderSidebar() string {
-	sidebarWidth := int(float64(m.width) * 0.3)
+func (m Model) renderSidebar(sidebarWidth, totalHeight, footerHeightTarget int) string {
 	usable := sidebarWidth - 4
 	if usable < 1 {
 		usable = 1
@@ -723,7 +785,7 @@ func (m Model) renderSidebar() string {
 	headerText := "󱫋 SESSIONCRAFT"
 	modeText := m.getModeLabel()
 	headerStyle := m.styles.Header.Width(sidebarWidth - 4)
-	header := headerStyle.Render(headerText+" ["+modeText+"]") + "\n"
+	header := headerStyle.Render(headerText + " [" + modeText + "]")
 
 	// Footer dock and status area (bottom section)
 	footerDock := m.renderFooterDock(usable)
@@ -739,13 +801,15 @@ func (m Model) renderSidebar() string {
 	// Calculate heights
 	headerHeight := lipgloss.Height(header)
 	footerHeight := lipgloss.Height(footer.String())
+	if footerHeightTarget > footerHeight {
+		footerHeight = footerHeightTarget
+	}
 
+	// Account for border overhead (right border = 1 char width, no height impact)
 	// Available height for tree nodes
-	// Subtract: header + footer + top padding (1) + spacing after header (1) + spacing before footer (1) + bottom margin (1)
-	extraPadding := 4
-	availableHeight := m.height - headerHeight - footerHeight - extraPadding
-	if availableHeight < 1 {
-		availableHeight = 1
+	availableHeight := totalHeight - headerHeight - 1 - footerHeight
+	if availableHeight < 0 {
+		availableHeight = 0
 	}
 
 	// Render tree nodes
@@ -762,36 +826,49 @@ func (m Model) renderSidebar() string {
 		treeContent.WriteString(line + "\n")
 	}
 
-	// Calculate remaining space to push footer to bottom
-	contentHeight := lipgloss.Height(treeContent.String())
-	paddingHeight := availableHeight - contentHeight
-	if paddingHeight < 0 {
-		paddingHeight = 0
+	treeStr := strings.TrimRight(treeContent.String(), "\n")
+
+	// Build top content (header + tree)
+	var topContent strings.Builder
+	topContent.WriteString(header)
+	topContent.WriteString("\n")
+	if treeStr != "" {
+		topContent.WriteString(treeStr)
 	}
 
-	// Build sidebar content with footer at bottom
-	var sidebarContent strings.Builder
-	sidebarContent.WriteString(header)
-	sidebarContent.WriteString("\n")
-	sidebarContent.WriteString(treeContent.String())
+	// Use lipgloss.JoinVertical with bottom placement for footer
+	// Calculate inner height (excluding border)
+	innerHeight := totalHeight
 
-	// Add padding to push footer to bottom
-	for i := 0; i < paddingHeight; i++ {
-		sidebarContent.WriteString("\n")
+	// Place top content at top, footer at bottom using lipgloss.Place
+	topSection := topContent.String()
+	bottomSection := footer.String()
+
+	// Combine with proper spacing using Place
+	topHeight := lipgloss.Height(topSection)
+	bottomHeight := lipgloss.Height(bottomSection)
+	middlePadding := innerHeight - topHeight - bottomHeight
+	if middlePadding < 0 {
+		middlePadding = 0
 	}
 
-	sidebarContent.WriteString("\n")
-	sidebarContent.WriteString(footer.String())
+	var content strings.Builder
+	content.WriteString(topSection)
+	for i := 0; i < middlePadding; i++ {
+		content.WriteString("\n")
+	}
+	content.WriteString(bottomSection)
 
-	// Apply sidebar style
+	// Apply sidebar style with fixed height
 	sidebarStyle := lipgloss.NewStyle().
 		Width(sidebarWidth).
+		Height(totalHeight).
 		PaddingLeft(1).
 		PaddingRight(1).
 		Border(lipgloss.NormalBorder(), false, true, false, false).
 		BorderForeground(lipgloss.Color(m.config.Theme.Border))
 
-	return sidebarStyle.Render(sidebarContent.String())
+	return sidebarStyle.Render(content.String())
 }
 
 func (m Model) renderTreeNode(node sidebar.TreeNode, isSelected bool, maxWidth int) string {
@@ -850,7 +927,11 @@ func (m Model) getNodeIcon(node sidebar.TreeNode) string {
 	case sidebar.SessionNode:
 		return SessionStateIcon(node.Session.Attached)
 	case sidebar.WindowNode:
-		return WindowIcon(node.Window.Name)
+		icon := WindowIcon(node.Window.Name)
+		if icon == "" {
+			return node.Prefix
+		}
+		return node.Prefix + icon
 	case sidebar.GhostNodeType:
 		return GhostIcon()
 	}
@@ -862,7 +943,7 @@ func (m Model) getNodeName(node sidebar.TreeNode) string {
 	case sidebar.SessionNode:
 		return node.Session.Name
 	case sidebar.WindowNode:
-		return node.Prefix + node.Window.Name
+		return node.Window.Name
 	case sidebar.GhostNodeType:
 		return node.Ghost.Name
 	}
@@ -997,7 +1078,7 @@ func (m Model) renderStatusArea(maxWidth int) string {
 		return m.input.View()
 	case ModeConfirm:
 		style := lipgloss.NewStyle().
-			Background(lipgloss.Color("#2a2030")).
+			Background(lipgloss.Color(m.config.Theme.Surface)).
 			Foreground(lipgloss.Color(m.config.Theme.Danger)).
 			Bold(true).
 			Padding(0, 1)
