@@ -12,11 +12,15 @@ func TestPreviewView(t *testing.T) {
 	theme := config.DefaultConfig().Theme
 	m := NewModel(theme)
 	m.Width = 60
-	m.Height = 20
+	m.Height = 25
 	m.Active = true
 	m.Content = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
-	m.ResourceUsage = tmux.ResourceUsage{CPU: "10%", Memory: "50%"}
+	m.ResourceUsage = tmux.ResourceUsage{CPU: "10%", Memory: "50KB"}
 	m.Metadata = Metadata{
+		SessionName: "development",
+		WindowName:  "editor",
+		WindowIndex: 1,
+		IsActive:    true,
 		Path:        "~/projects",
 		Uptime:      "2h 30m",
 		ClientCount: 2,
@@ -26,12 +30,12 @@ func TestPreviewView(t *testing.T) {
 
 	view := m.View()
 
-	// Check for Metrics card elements
-	if !strings.Contains(view, "Metrics") {
-		t.Error("View should contain Metrics card title")
+	// Check for header elements (session name and status)
+	if !strings.Contains(view, "development") {
+		t.Error("View should contain session name")
 	}
-	if !strings.Contains(view, "CPU") {
-		t.Error("View should contain CPU label")
+	if !strings.Contains(view, "active") {
+		t.Error("View should contain active badge")
 	}
 
 	// Check for Preview card
@@ -42,9 +46,9 @@ func TestPreviewView(t *testing.T) {
 		t.Error("View should contain content")
 	}
 
-	// Check for Info card
-	if !strings.Contains(view, "Info") {
-		t.Error("View should contain Info card title")
+	// Check for footer elements (path, CPU, MEM)
+	if !strings.Contains(view, "CPU") {
+		t.Error("View should contain CPU in footer")
 	}
 
 	// Test inactive model returns empty
