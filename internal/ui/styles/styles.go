@@ -67,11 +67,11 @@ func NewStyles(theme config.ThemeConfig) Styles {
 		Accent:   lipgloss.NewStyle().Foreground(accent),
 		Dimmed:   lipgloss.NewStyle().Foreground(dimmed),
 		Border:   lipgloss.NewStyle().Foreground(border),
-		Selected: lipgloss.NewStyle().Foreground(accent).Bold(true).Background(lipgloss.Color("#2a2a3e")),
-		Header:   lipgloss.NewStyle().Foreground(bg).Background(accent).Bold(true).Padding(0, 1).MarginBottom(1),
+		Selected: lipgloss.NewStyle().Foreground(bg).Background(accent).Bold(true),
+		Header:   lipgloss.NewStyle().Foreground(accent).Bold(true).Padding(0, 1).MarginBottom(1),
 		Footer:   lipgloss.NewStyle().Foreground(dimmed).Italic(true),
 		Normal:   lipgloss.NewStyle().Foreground(fg),
-		Match:    lipgloss.NewStyle().Foreground(lipgloss.Color("#f9e2af")).Bold(true).Underline(true),
+		Match:    lipgloss.NewStyle().Foreground(warning).Bold(true).Underline(true),
 
 		// Sidebar background
 		SidebarBg: lipgloss.NewStyle().Background(mantle),
@@ -84,18 +84,18 @@ func NewStyles(theme config.ThemeConfig) Styles {
 
 		// Badges
 		BadgeActive:  lipgloss.NewStyle().Background(active).Foreground(bg).Padding(0, 1).Bold(true),
-		BadgeProcess: lipgloss.NewStyle().Background(lipgloss.Color("#89b4fa")).Foreground(bg).Padding(0, 1),
+		BadgeProcess: lipgloss.NewStyle().Background(accent).Foreground(bg).Padding(0, 1),
 		BadgeCount:   lipgloss.NewStyle().Background(surface).Foreground(textMuted).Padding(0, 1),
 		BadgeDanger:  lipgloss.NewStyle().Background(danger).Foreground(bg).Padding(0, 1).Bold(true),
 		BadgeWarning: lipgloss.NewStyle().Background(warning).Foreground(bg).Padding(0, 1),
 
 		// Footer pills
-		PillKey:   lipgloss.NewStyle().Background(accent).Foreground(bg).Padding(0, 1).Bold(true),
-		PillLabel: lipgloss.NewStyle().Foreground(dimmed).MarginRight(2),
+		PillKey:   lipgloss.NewStyle().Background(surface).Foreground(accent).Padding(0, 1).Bold(true),
+		PillLabel: lipgloss.NewStyle().Foreground(textMuted).MarginRight(2),
 
 		// Cards
 		CardBorder: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border),
-		CardTitle:  lipgloss.NewStyle().Foreground(dimmed).Bold(true),
+		CardTitle:  lipgloss.NewStyle().Foreground(accent).Bold(true),
 
 		// Text variants
 		TextMuted:   lipgloss.NewStyle().Foreground(textMuted),

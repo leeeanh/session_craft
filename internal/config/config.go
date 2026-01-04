@@ -39,17 +39,17 @@ func DefaultConfig() Config {
 			Lines: 20,
 		},
 		Theme: ThemeConfig{
-			Background: "#1e1e2e",
-			Foreground: "#cdd6f4",
-			Accent:     "#cba6f7", // Mauve
-			Border:     "#45475a", // Surface1
-			Dimmed:     "#6c7086", // Overlay0
-			Mantle:     "#181825",
-			Active:     "#a6e3a1",
-			Warning:    "#f9e2af",
-			Danger:     "#f38ba8",
-			Surface:    "#313244",
-			TextMuted:  "#a6adc8",
+			Background: "#1a1b26",
+			Foreground: "#c0caf5",
+			Accent:     "#7aa2f7",
+			Border:     "#414868",
+			Dimmed:     "#787fa0",
+			Mantle:     "#1f2335",
+			Active:     "#9ece6a",
+			Warning:    "#e0af68",
+			Danger:     "#f7768e",
+			Surface:    "#24283b",
+			TextMuted:  "#787fa0",
 		},
 	}
 }
