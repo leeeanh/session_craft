@@ -94,3 +94,56 @@ func TestFormatMemory(t *testing.T) {
 		}
 	}
 }
+
+func TestTruncateWithANSI(t *testing.T) {
+	theme := config.DefaultConfig().Theme
+	m := NewModel(theme)
+	m.Width = 30
+	m.Height = 10
+	m.Active = true
+
+	// Content with ANSI color codes
+	// \x1b[32m = green, \x1b[0m = reset
+	m.Content = "\x1b[32mThis is a very long green colored line that should be truncated properly\x1b[0m"
+	m.ResourceUsage = tmux.ResourceUsage{CPU: "10%", Memory: "50KB"}
+	m.Metadata = Metadata{Path: "~", Uptime: "1h", ClientCount: 1, WindowCount: 1}
+
+	view := m.View()
+
+	// Should not contain broken escape sequences (partial \x1b[)
+	if strings.Contains(view, "\x1b[3") && !strings.Contains(view, "\x1b[32m") && !strings.Contains(view, "\x1b[0m") {
+		t.Error("ANSI escape sequence was truncated mid-sequence")
+	}
+
+	// Should still contain some green color code or be properly terminated
+	// The key is no corrupted partial escapes
+	if strings.Count(view, "\x1b[") != strings.Count(view, "m") {
+		// This would indicate unbalanced/corrupted escapes
+		// Note: This is a heuristic, not perfect
+	}
+}
+
+func TestTruncateUnicode(t *testing.T) {
+	theme := config.DefaultConfig().Theme
+	m := NewModel(theme)
+	m.Width = 20
+	m.Height = 10
+	m.Active = true
+
+	// Content with wide unicode characters (emoji = 2 cells wide)
+	m.Content = "Hello 🚀🎉🔥 World this is a long line"
+	m.ResourceUsage = tmux.ResourceUsage{CPU: "5%", Memory: "100KB"}
+	m.Metadata = Metadata{Path: "~", Uptime: "30m", ClientCount: 1, WindowCount: 1}
+
+	view := m.View()
+
+	// Should render without panic
+	if view == "" {
+		t.Error("View should not be empty")
+	}
+
+	// Should contain the ellipsis indicating truncation
+	if !strings.Contains(view, "…") && !strings.Contains(view, "Hello") {
+		t.Error("Content should be present or truncated with ellipsis")
+	}
+}

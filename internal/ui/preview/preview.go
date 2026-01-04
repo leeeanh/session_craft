@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 	"github.com/user/sessioncraft/internal/config"
 	"github.com/user/sessioncraft/internal/tmux"
@@ -107,6 +108,17 @@ func (m Model) View() string {
 	return containerStyle.Render(content.String())
 }
 
+func (m Model) InfoCardHeight(width int) int {
+	if width < 1 {
+		width = 1
+	}
+	border := lipgloss.Color(m.Theme.Border)
+	dimmed := lipgloss.Color(m.Theme.Dimmed)
+	accent := lipgloss.Color(m.Theme.Accent)
+	infoCard := m.renderInfoCard(width, border, dimmed, accent)
+	return lipgloss.Height(infoCard)
+}
+
 func (m Model) renderMetricsCard(width int, border, dimmed, accent, surface lipgloss.TerminalColor) string {
 	// Parse CPU percentage (returns "3.2%" -> 0.032)
 	cpuPct := parsePercent(m.ResourceUsage.CPU)
@@ -140,7 +152,7 @@ func (m Model) renderMetricsCard(width int, border, dimmed, accent, surface lipg
 		Width(width).
 		Padding(0, 1)
 
-	titleStyle := lipgloss.NewStyle().Foreground(dimmed)
+	titleStyle := lipgloss.NewStyle().Foreground(accent).Bold(true)
 	return cardStyle.Render(titleStyle.Render("─ Metrics ─") + "\n" + metrics)
 }
 
@@ -150,31 +162,62 @@ func (m Model) renderPreviewCard(width, height int, border, dimmed lipgloss.Term
 	lines := strings.Split(content, "\n")
 
 	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
-		lines = []string{"[No preview available]"}
+		lines = []string{"No preview available"}
 	}
 
-	// Take first N lines (top of visible content)
+	// Take last N lines (tail) so recent output is visible.
 	maxLines := height - 3
 	if maxLines < 1 {
 		maxLines = 1
 	}
+
+	textMuted := lipgloss.Color(m.Theme.TextMuted)
+	if m.Theme.TextMuted == "" {
+		textMuted = lipgloss.Color(m.Theme.Dimmed)
+	}
+	dimmedColor := lipgloss.Color(m.Theme.Dimmed)
+	if m.Theme.Dimmed == "" {
+		dimmedColor = textMuted
+	}
+	mutedStyle := lipgloss.NewStyle().Foreground(dimmedColor)
+	contentStyle := lipgloss.NewStyle().Foreground(textMuted)
+
+	overflow := 0
 	if len(lines) > maxLines {
-		lines = lines[:maxLines]
+		overflow = len(lines) - maxLines
+		// Reserve a line for the overflow hint when space allows.
+		if maxLines > 2 {
+			maxLines--
+		}
+	}
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
 	}
 
-	// Truncate long lines
+	// Truncate long lines using ANSI-aware truncation
 	usable := width - 4
+	if usable < 1 {
+		usable = 1
+	}
 	for i, l := range lines {
-		if runewidth.StringWidth(l) > usable {
-			lines[i] = runewidth.Truncate(l, usable, "")
+		if ansi.StringWidth(l) > usable {
+			lines[i] = ansi.Truncate(l, usable, "…")
 		}
 	}
 
-	content = strings.Join(lines, "\n")
+	renderedLines := make([]string, 0, len(lines)+1)
+	if overflow > 0 && height > 4 {
+		hint := fmt.Sprintf("… %d more above", overflow)
+		if ansi.StringWidth(hint) > usable {
+			hint = ansi.Truncate(hint, usable, "…")
+		}
+		renderedLines = append(renderedLines, mutedStyle.Render(hint))
+	}
 
-	// Apply dimmed style to content
-	contentStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#9399b2")) // Slightly dimmed
+	for _, line := range lines {
+		renderedLines = append(renderedLines, contentStyle.Render(line))
+	}
+	content = strings.Join(renderedLines, "\n")
 
 	cardStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -183,8 +226,8 @@ func (m Model) renderPreviewCard(width, height int, border, dimmed lipgloss.Term
 		Height(height).
 		Padding(0, 1)
 
-	titleStyle := lipgloss.NewStyle().Foreground(dimmed)
-	return cardStyle.Render(titleStyle.Render("─ Preview ─") + "\n" + contentStyle.Render(content))
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Accent)).Bold(true)
+	return cardStyle.Render(titleStyle.Render("─ Preview ─") + "\n" + content)
 }
 
 func (m Model) renderInfoCard(width int, border, dimmed, accent lipgloss.TerminalColor) string {
@@ -215,8 +258,8 @@ func (m Model) renderInfoCard(width int, border, dimmed, accent lipgloss.Termina
 	var tags []string
 	for _, tag := range m.Metadata.Tags {
 		badge := lipgloss.NewStyle().
-			Background(lipgloss.Color("#313244")).
-			Foreground(lipgloss.Color("#cdd6f4")).
+			Background(lipgloss.Color(m.Theme.Surface)).
+			Foreground(lipgloss.Color(m.Theme.Foreground)).
 			Padding(0, 1).
 			Render(tag)
 		tags = append(tags, badge)
@@ -255,7 +298,7 @@ func (m Model) renderInfoCard(width int, border, dimmed, accent lipgloss.Termina
 		Width(width).
 		Padding(0, 1)
 
-	titleStyle := lipgloss.NewStyle().Foreground(dimmed)
+	titleStyle := lipgloss.NewStyle().Foreground(accent).Bold(true)
 	return cardStyle.Render(titleStyle.Render("─ Info ─") + "\n" + info)
 }
 
