@@ -664,6 +664,11 @@ func (m Model) updatePreview() tea.Cmd {
 			usage = tmux.ResourceUsage{CPU: "-", Memory: "-"}
 		}
 
+		currentPath := sessionPath
+		if cwd, err := m.client.ActivePaneCurrentPath(sessionName, windowIndex); err == nil && cwd != "" {
+			currentPath = cwd
+		}
+
 		return previewMsg{
 			content: content,
 			usage:   usage,
@@ -672,7 +677,7 @@ func (m Model) updatePreview() tea.Cmd {
 				WindowName:  windowName,
 				WindowIndex: windowIndex,
 				IsActive:    isAttached,
-				Path:        sessionPath,
+				Path:        currentPath,
 				Uptime:      uptime,
 				ClientCount: clientCount,
 				WindowCount: windowCount,

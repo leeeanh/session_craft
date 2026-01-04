@@ -111,6 +111,46 @@ func (c *Client) CapturePane(sessionName string, windowIndex int, lines int) (st
 	return str, nil
 }
 
+// ActivePaneCurrentPath returns the current working directory of the active pane
+// in the given session/window.
+func (c *Client) ActivePaneCurrentPath(sessionName string, windowIndex int) (string, error) {
+	target := fmt.Sprintf("%s:%d", sessionName, windowIndex)
+	// We intentionally query panes rather than relying on session_path, which can differ
+	// from the current directory of the selected window/pane.
+	cmd := exec.Command("tmux", "list-panes", "-t", target, "-F", "#{pane_active}\t#{pane_current_path}")
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("list-panes failed: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) == 0 || (len(lines) == 1 && strings.TrimSpace(lines[0]) == "") {
+		return "", fmt.Errorf("no panes found")
+	}
+
+	firstPath := ""
+	for _, line := range lines {
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		active := parts[0] == "1"
+		path := strings.TrimSpace(parts[1])
+		if firstPath == "" && path != "" {
+			firstPath = path
+		}
+		if active && path != "" {
+			return path, nil
+		}
+	}
+	if firstPath != "" {
+		return firstPath, nil
+	}
+	return "", fmt.Errorf("failed to parse pane path")
+}
+
 func (c *Client) CreateSession(name, dir string) error {
 	args := []string{"new-session", "-d", "-s", name}
 	if dir != "" {
