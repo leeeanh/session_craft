@@ -38,19 +38,32 @@ func DefaultConfig() Config {
 		Preview: PreviewConfig{
 			Lines: 20,
 		},
+		// Theme: ThemeConfig{
+		// 	Background: "#1a1b26",
+		// 	Foreground: "#c0caf5",
+		// 	Accent:     "#7aa2f7",
+		// 	Border:     "#414868",
+		// 	Dimmed:     "#787fa0",
+		// 	Mantle:     "#1f2335",
+		// 	Active:     "#9ece6a",
+		// 	Warning:    "#e0af68",
+		// 	Danger:     "#f7768e",
+		// 	Surface:    "#24283b",
+		// 	TextMuted:  "#787fa0",
+		// },
 		Theme: ThemeConfig{
-			Background: "#1a1b26",
-			Foreground: "#c0caf5",
-			Accent:     "#7aa2f7",
-			Border:     "#414868",
-			Dimmed:     "#787fa0",
-			Mantle:     "#1f2335",
-			Active:     "#9ece6a",
-			Warning:    "#e0af68",
-			Danger:     "#f7768e",
-			Surface:    "#24283b",
-			TextMuted:  "#787fa0",
-		},
+    Background: "#282a36", 
+    Foreground: "#f8f8f2", 
+    Accent:     "#bd93f9", // Purple
+    Border:     "#44475a", 
+    Dimmed:     "#6272a4", 
+    Mantle:     "#191a21", 
+    Active:     "#50fa7b", // Green
+    Warning:    "#f1fa8c", // Yellow
+    Danger:     "#ff5555", // Red
+    Surface:    "#343746", 
+    TextMuted:  "#94a3b8", 
+},
 	}
 }
 

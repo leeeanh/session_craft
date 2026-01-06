@@ -30,35 +30,44 @@ func highlightString(text string, matches []int, matchStyle, normalStyle lipglos
 
 // ProcessIcon returns a Nerd Font icon for common process names
 func ProcessIcon(processName string) string {
-	icons := map[string]string{
-		"nvim":    "",
-		"vim":     "",
-		"vi":      "",
-		"nano":    "",
-		"code":    "󰨞",
-		"node":    "󰎙",
-		"npm":     "",
-		"yarn":    "",
-		"python":  "",
-		"python3": "",
-		"go":      "",
-		"cargo":   "",
-		"rustc":   "",
-		"docker":  "",
-		"git":     "",
-		"ssh":     "󰣀",
-		"htop":    "",
-		"btop":    "",
-		"bash":    "",
-		"zsh":     "",
-		"fish":    "",
-		"tmux":    "",
-	}
+    icons := map[string]string{
+        // Editors & IDEs
+        "nvim":    "", "vim":     "", "vi":      "",
+        "nano":    "󰏫", "code":    "󰨞", "emacs":   "",
+        "subl":    "",
 
-	if icon, ok := icons[processName]; ok {
-		return icon
-	}
-	return "" // Default terminal icon
+        // Languages & Runtimes
+        "node":    "󰎙", "npm":     "", "yarn":    "", "bun":     "",
+        "python":  "", "python3": "", "go":      "", "rustc":   "",
+        "cargo":   "", "java":     "", "ruby":    "", "php":     "󰌟",
+        "lua":     "", "deno":    "", "perl":    "",
+
+        // Infrastructure & Databases
+        "docker":  "󰡨", "k8s":     "󱄄", "kubectl": "󱄄", "terraform": "",
+        "aws":     "", "gcloud":  "󱇶", "sql":     "", "postgres": "",
+        "mysql":   "", "redis":   "", "mongo":   "",
+
+        // Version Control & CLI Tools
+        "git":     "", "ssh":     "󰣀", "tmux":    "", "direnv":  "",
+        "make":    "", "cmake":   "", "just":    "󱁤",
+
+        // Shells
+        "bash":    "", "zsh":     "", "fish":    "󰈺", "sh":      "",
+        "powershell": "", "pwsh": "",
+
+        // Monitoring & System
+        "htop":    "󱫔", "btop":    "󱫔", "top":     "󱫔", "nvtop":   "󰢮",
+        "ping":    "󰓅", "curl":    "", "wget":    "", "grep":    "",
+        "ripgrep": "", "rg":      "", "fzf":     "",
+    }
+
+    // Normalize input (lowercase) to ensure matches
+    icon, ok := icons[strings.ToLower(processName)]
+    if ok {
+        return icon
+    }
+    
+    return "" // Default terminal/prompt icon
 }
 
 // SessionStateIcon returns icon based on session state
@@ -71,11 +80,16 @@ func SessionStateIcon(attached bool) string {
 
 // GhostIcon returns the ghost directory icon
 func GhostIcon() string {
-	return "" // Ghost/bookmark folder
+	return "󱗜" // Ghost/bookmark folder
 }
 
 // WindowIcon returns icon for a window based on its name
 func WindowIcon(windowName string) string {
-	// Could be enhanced to detect actual running process
-	return ProcessIcon(windowName)
+	// Simple mapping: you can expand this to check for 
+	// specific suffixes or prefixes if needed.
+	icon := ProcessIcon(windowName)
+	if icon == "" { // If it's just the default terminal icon
+		return "󰖲" // Generic window icon
+	}
+	return icon
 }

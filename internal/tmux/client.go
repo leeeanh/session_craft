@@ -85,6 +85,39 @@ func (c *Client) FetchState() ([]Session, error) {
 	return sessions, nil
 }
 
+// CurrentSessionWindow returns the active session/window for the current tmux client.
+func (c *Client) CurrentSessionWindow() (string, int, error) {
+	if os.Getenv("TMUX") == "" && os.Getenv("TMUX_PANE") == "" {
+		return "", 0, fmt.Errorf("not running inside tmux")
+	}
+
+	format := "#{session_name}\t#{window_index}"
+	args := []string{"display-message", "-p", format}
+	if pane := os.Getenv("TMUX_PANE"); pane != "" {
+		args = []string{"display-message", "-p", "-t", pane, format}
+	}
+
+	cmd := exec.Command("tmux", args...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "", 0, fmt.Errorf("display-message failed: %w", err)
+	}
+
+	output := strings.TrimSpace(out.String())
+	parts := strings.SplitN(output, "\t", 2)
+	if len(parts) != 2 || parts[0] == "" {
+		return "", 0, fmt.Errorf("unexpected display-message output: %q", output)
+	}
+
+	windowIndex, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid window index %q: %w", parts[1], err)
+	}
+
+	return parts[0], windowIndex, nil
+}
+
 // CapturePane returns the last N lines of the active pane in a window associated with a session
 // We target the window using session:index format
 func (c *Client) CapturePane(sessionName string, windowIndex int, lines int) (string, error) {

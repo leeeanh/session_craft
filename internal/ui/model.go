@@ -48,17 +48,18 @@ const (
 )
 
 type Model struct {
-	sessions     []tmux.Session
-	nodes        []sidebar.TreeNode
-	expanded     map[string]bool
-	cursor       int
-	offset       int // Scroll offset
-	client       *tmux.Client
-	err          error
-	width        int
-	height       int
-	preview      preview.Model
-	previewReady bool // true if we have fetched data for current selection
+	sessions          []tmux.Session
+	nodes             []sidebar.TreeNode
+	expanded          map[string]bool
+	cursor            int
+	offset            int // Scroll offset
+	cursorInitialized bool
+	client            *tmux.Client
+	err               error
+	width             int
+	height            int
+	preview           preview.Model
+	previewReady      bool // true if we have fetched data for current selection
 
 	mode          Mode
 	input         textinput.Model
@@ -83,6 +84,13 @@ type previewMsg struct {
 	content  string
 	usage    tmux.ResourceUsage
 	metadata preview.Metadata
+}
+
+type sessionsMsg struct {
+	sessions           []tmux.Session
+	currentSession     string
+	currentWindowIndex int
+	hasCurrent         bool
 }
 
 const forkScratchWindowName = "__sessioncraft__fork__"
@@ -345,28 +353,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				// Attach
-				node := m.currentNode()
-				target := ""
-				if node != nil {
-					if node.Type == sidebar.SessionNode {
-						target = node.Session.Name
-					} else if node.Type == sidebar.WindowNode {
-						target = fmt.Sprintf("%s:%d", node.Window.SessionName, node.Window.Index)
-					} else if node.Type == sidebar.GhostNodeType {
-						// Create session from ghost
-						name := node.Ghost.Name
-						path := node.Ghost.Path
-						m.client.CreateSession(name, path)
-						// Attach immediately
-						target = name
-					}
-				}
-				if target != "" {
-					cmd = tea.ExecProcess(m.client.GetAttachCmd(target), func(err error) tea.Msg {
-						// On finish (detach or switch success)
-						return tea.Quit() // Just quit
-					})
-					return m, cmd
+				if attachCmd, ok := m.attachNode(m.currentNode()); ok {
+					return m, attachCmd
 				}
 
 			case "n":
@@ -461,12 +449,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMessage = "Restarted session " + node.Session.Name
 					cmd = m.loadSessions
 				}
+			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+				targetIndex := int(msg.String()[0] - '1')
+				nodeIndex := m.findNthSessionNode(targetIndex)
+				if nodeIndex == -1 {
+					break
+				}
+				m.cursor = nodeIndex
+				m.ensureCursorVisible()
+				cmd = m.updatePreview()
+				if attachCmd, ok := m.attachNode(m.currentNode()); ok {
+					return m, attachCmd
+				}
 			}
 		}
 	case []tmux.Session:
-		m.sessions = msg
-		m.updateNodes()
-		cmd = m.updatePreview() // Fetch preview for initial selection
+		cmd = m.applySessions(msg, "", 0, false)
+	case sessionsMsg:
+		cmd = m.applySessions(msg.sessions, msg.currentSession, msg.currentWindowIndex, msg.hasCurrent)
 	case previewMsg:
 		m.preview.Content = msg.content
 		m.preview.ResourceUsage = msg.usage
@@ -503,6 +503,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.input.Width < 1 {
 			m.input.Width = 1
 		}
+
+		m.ensureCursorVisible()
 	}
 	return m, cmd
 }
@@ -559,6 +561,123 @@ func (m *Model) updateNodes() {
 	}
 }
 
+func (m *Model) applySessions(sessions []tmux.Session, currentSession string, currentWindowIndex int, hasCurrent bool) tea.Cmd {
+	m.sessions = sessions
+	m.updateNodes()
+	if !m.cursorInitialized {
+		if hasCurrent {
+			m.setCursorForCurrent(currentSession, currentWindowIndex)
+		}
+		m.cursorInitialized = true
+	}
+	return m.updatePreview()
+}
+
+func (m *Model) setCursorForCurrent(sessionName string, windowIndex int) {
+	if sessionName == "" {
+		return
+	}
+
+	if idx := m.findWindowNode(sessionName, windowIndex); idx != -1 {
+		m.cursor = idx
+		m.ensureCursorVisible()
+		return
+	}
+
+	if idx := m.findSessionNode(sessionName); idx != -1 {
+		m.cursor = idx
+		m.ensureCursorVisible()
+	}
+}
+
+func (m *Model) findWindowNode(sessionName string, windowIndex int) int {
+	for i, node := range m.nodes {
+		if node.Type == sidebar.WindowNode &&
+			node.Window.SessionName == sessionName &&
+			node.Window.Index == windowIndex {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m *Model) findSessionNode(sessionName string) int {
+	for i, node := range m.nodes {
+		if node.Type == sidebar.SessionNode && node.Session.Name == sessionName {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m *Model) ensureCursorVisible() {
+	if m.height <= 0 {
+		return
+	}
+
+	visibleLines := m.height - 5
+	if visibleLines < 1 {
+		visibleLines = 1
+	}
+
+	if m.cursor < m.offset {
+		m.offset = m.cursor
+	} else if m.cursor >= m.offset+visibleLines {
+		m.offset = m.cursor - visibleLines + 1
+	}
+
+	if m.offset < 0 {
+		m.offset = 0
+	}
+}
+
+func (m *Model) findNthSessionNode(n int) int {
+	if n < 0 {
+		return -1
+	}
+	count := 0
+	for i, node := range m.nodes {
+		if node.Type != sidebar.SessionNode {
+			continue
+		}
+		if count == n {
+			return i
+		}
+		count++
+	}
+	return -1
+}
+
+func (m Model) attachNode(node *sidebar.TreeNode) (tea.Cmd, bool) {
+	if node == nil {
+		return nil, false
+	}
+
+	target := ""
+	switch node.Type {
+	case sidebar.SessionNode:
+		target = node.Session.Name
+	case sidebar.WindowNode:
+		target = fmt.Sprintf("%s:%d", node.Window.SessionName, node.Window.Index)
+	case sidebar.GhostNodeType:
+		// Create session from ghost
+		name := node.Ghost.Name
+		path := node.Ghost.Path
+		m.client.CreateSession(name, path)
+		target = name
+	}
+
+	if target == "" {
+		return nil, false
+	}
+
+	cmd := tea.ExecProcess(m.client.GetAttachCmd(target), func(err error) tea.Msg {
+		// On finish (detach or switch success)
+		return tea.Quit()
+	})
+	return cmd, true
+}
+
 func (m Model) currentNode() *sidebar.TreeNode {
 	if m.cursor >= 0 && m.cursor < len(m.nodes) {
 		return &m.nodes[m.cursor]
@@ -577,12 +696,14 @@ func (m Model) updatePreview() tea.Cmd {
 	var windowIndex int
 	var panePID int
 	var windowCount int
+	var sessionIndex int
 	var isAttached bool
 	var session *tmux.Session
 
 	if node.Type == sidebar.SessionNode {
 		sessionName = node.Session.Name
 		windowCount = len(node.Session.Windows)
+		sessionIndex = m.sessionDisplayIndex(sessionName)
 		isAttached = node.Session.Attached
 		session = node.Session
 		// Find active window or default to 0
@@ -606,6 +727,7 @@ func (m Model) updatePreview() tea.Cmd {
 		windowName = node.Window.Name
 		windowIndex = node.Window.Index
 		panePID = node.Window.ActivePanePID
+		sessionIndex = m.sessionDisplayIndex(sessionName)
 		session = m.sessionByName(sessionName)
 		if session != nil {
 			windowCount = len(session.Windows)
@@ -624,15 +746,16 @@ func (m Model) updatePreview() tea.Cmd {
 				content: "[No preview available]",
 				usage:   tmux.ResourceUsage{CPU: "-", Memory: "-"},
 				metadata: preview.Metadata{
-					SessionName: "",
-					WindowName:  "",
-					WindowIndex: 0,
-					IsActive:    false,
-					Path:        ghostPath,
-					Uptime:      "—",
-					ClientCount: 0,
-					WindowCount: 0,
-					Tags:        []string{},
+					SessionName:  "",
+					WindowName:   "",
+					WindowIndex:  0,
+					SessionIndex: 0,
+					IsActive:     false,
+					Path:         ghostPath,
+					Uptime:       "—",
+					ClientCount:  0,
+					WindowCount:  0,
+					Tags:         []string{},
 				},
 			}
 		}
@@ -673,15 +796,16 @@ func (m Model) updatePreview() tea.Cmd {
 			content: content,
 			usage:   usage,
 			metadata: preview.Metadata{
-				SessionName: sessionName,
-				WindowName:  windowName,
-				WindowIndex: windowIndex,
-				IsActive:    isAttached,
-				Path:        currentPath,
-				Uptime:      uptime,
-				ClientCount: clientCount,
-				WindowCount: windowCount,
-				Tags:        []string{},
+				SessionName:  sessionName,
+				WindowName:   windowName,
+				WindowIndex:  windowIndex,
+				SessionIndex: sessionIndex,
+				IsActive:     isAttached,
+				Path:         currentPath,
+				Uptime:       uptime,
+				ClientCount:  clientCount,
+				WindowCount:  windowCount,
+				Tags:         []string{},
 			},
 		}
 	}
@@ -694,6 +818,23 @@ func (m Model) sessionByName(name string) *tmux.Session {
 		}
 	}
 	return nil
+}
+
+func (m Model) sessionDisplayIndex(name string) int {
+	if name == "" {
+		return 0
+	}
+	count := 0
+	for _, node := range m.nodes {
+		if node.Type != sidebar.SessionNode || node.Session == nil {
+			continue
+		}
+		count++
+		if node.Session.Name == name {
+			return count
+		}
+	}
+	return 0
 }
 
 func formatUptime(created time.Time) string {
@@ -903,6 +1044,17 @@ func (m Model) renderTreeNode(node sidebar.TreeNode, isSelected bool, maxWidth i
 	// 3. Name with optional highlighting
 	name := m.getNodeName(node)
 	styledName := m.styleNodeName(name, node, isSelected)
+	if node.Type == sidebar.SessionNode && node.Session != nil {
+		if index := m.sessionDisplayIndex(node.Session.Name); index > 0 {
+			indexStyle := m.styles.Dimmed
+			if isSelected {
+				indexStyle = m.styles.Selected
+			} else if node.Session.Attached {
+				indexStyle = m.styles.Normal
+			}
+			parts = append(parts, indexStyle.Render(fmt.Sprintf("%d:", index)))
+		}
+	}
 	parts = append(parts, styledName)
 
 	// 4. Badges
@@ -1128,5 +1280,15 @@ func (m Model) loadSessions() tea.Msg {
 		m.expanded[s.Name] = true
 	}
 
-	return sessions
+	msg := sessionsMsg{
+		sessions: sessions,
+	}
+
+	if sessionName, windowIndex, err := m.client.CurrentSessionWindow(); err == nil {
+		msg.currentSession = sessionName
+		msg.currentWindowIndex = windowIndex
+		msg.hasCurrent = true
+	}
+
+	return msg
 }

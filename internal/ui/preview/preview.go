@@ -24,15 +24,16 @@ const (
 
 // Metadata contains additional info for the preview pane
 type Metadata struct {
-	SessionName string
-	WindowName  string
-	WindowIndex int
-	IsActive    bool // Session is attached
-	Path        string
-	Uptime      string
-	ClientCount int
-	WindowCount int
-	Tags        []string
+	SessionName  string
+	WindowName   string
+	WindowIndex  int
+	SessionIndex int
+	IsActive     bool // Session is attached
+	Path         string
+	Uptime       string
+	ClientCount  int
+	WindowCount  int
+	Tags         []string
 }
 
 type Model struct {
@@ -108,8 +109,14 @@ func (m Model) renderHeaderCard(width int, accent lipgloss.TerminalColor) string
 	}
 
 	identifier := m.Metadata.SessionName
-	if m.Metadata.WindowName != "" {
-		identifier = fmt.Sprintf("%s:%d %s", m.Metadata.SessionName, m.Metadata.WindowIndex, m.Metadata.WindowName)
+	if identifier != "" && m.Metadata.SessionIndex > 0 {
+		if m.Metadata.WindowName != "" {
+			identifier = fmt.Sprintf("%d: %s: %d %s", m.Metadata.SessionIndex, identifier, m.Metadata.WindowIndex, m.Metadata.WindowName)
+		} else {
+			identifier = fmt.Sprintf("%d: %s", m.Metadata.SessionIndex, identifier)
+		}
+	} else if m.Metadata.WindowName != "" {
+		identifier = fmt.Sprintf("%s:%d %s", identifier, m.Metadata.WindowIndex, m.Metadata.WindowName)
 	}
 	if identifier == "" {
 		identifier = "No session selected"
@@ -244,18 +251,6 @@ func (m Model) renderFooterCard(width int, border lipgloss.TerminalColor) string
 	iconStyle := lipgloss.NewStyle().Foreground(accent)
 	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.TextMuted))
 
-	// Path
-	path := m.Metadata.Path
-	if path == "" {
-		path = "~"
-	}
-	maxPathWidth := width/3 - 5
-	if maxPathWidth < 10 {
-		maxPathWidth = 10
-	}
-	path = truncatePath(path, maxPathWidth)
-	pathStr := fmt.Sprintf("%s %s", iconStyle.Render("󰉋"), textStyle.Render(path))
-
 	// Uptime
 	uptime := m.Metadata.Uptime
 	if uptime == "" {
@@ -273,9 +268,22 @@ func (m Model) renderFooterCard(width int, border lipgloss.TerminalColor) string
 	memStr := fmt.Sprintf("%s %s", labelStyle.Render("MEM"), textStyle.Render(formatMemory(m.ResourceUsage.Memory)))
 
 	separator := labelStyle.Render(" │ ")
-	footerContent := pathStr + separator + uptimeStr + separator + cpuStr + separator + memStr
-
 	usable := width - 4
+	staticWidth := ansi.StringWidth(uptimeStr) + ansi.StringWidth(cpuStr) + ansi.StringWidth(memStr) + (ansi.StringWidth(separator) * 3)
+	pathMaxWidth := usable - staticWidth
+	if pathMaxWidth < 1 {
+		pathMaxWidth = 1
+	}
+
+	// Path
+	path := m.Metadata.Path
+	if path == "" {
+		path = "~"
+	}
+	path = truncatePath(path, pathMaxWidth)
+	pathStr := fmt.Sprintf("%s %s", iconStyle.Render("󰉋"), textStyle.Render(path))
+
+	footerContent := pathStr + separator + uptimeStr + separator + cpuStr + separator + memStr
 	if ansi.StringWidth(footerContent) > usable {
 		footerContent = ansi.Truncate(footerContent, usable, "…")
 	}
@@ -293,8 +301,8 @@ func (m Model) renderFooterCard(width int, border lipgloss.TerminalColor) string
 func truncatePath(path string, maxWidth int) string {
 	// Icon (󰉋) + space takes ~3 characters
 	actualMaxWidth := maxWidth - 3
-	if actualMaxWidth < 5 {
-		actualMaxWidth = 5
+	if actualMaxWidth < 1 {
+		actualMaxWidth = 1
 	}
 
 	currentWidth := runewidth.StringWidth(path)
